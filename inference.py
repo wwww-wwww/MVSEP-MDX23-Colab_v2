@@ -3,8 +3,9 @@ __author__ = 'https://github.com/ZFTurbo/'
 
 if __name__ == '__main__':
     import os
+     
+    gpu_use = "0" #if gpu_use = 1 no gpu working in colab !
 
-    gpu_use = "1"
     print('GPU use: {}'.format(gpu_use))
     os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(gpu_use)
 
@@ -368,7 +369,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2
+            # Lowpass mixture before inversion to avoid high frequencyh bleeding
+            #vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2 #<= original code
+            vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
 
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.40) / total_files
@@ -383,7 +386,10 @@ class EnsembleDemucsMDXMusicSeparationModel:
             vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
 
         # Generate instrumental
-        instrum = mixed_sound_array - vocals
+        
+        # Lowpass mixture before inversion to avoid high frequencyh bleeding
+        #instrum = mixed_sound_array - vocals # <= original code
+        instrum = lp_filter(mixed_sound_array) - vocals
 
         audio = np.expand_dims(instrum.T, axis=0)
         audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
@@ -823,6 +829,20 @@ def predict_with_model(options):
         val = 100
         update_percent_func(int(val))
 
+
+#add lowpass filter for models with cutoff
+def lp_filter(audio):
+    sr = 44100
+    cutoff = 17400
+    # filtering
+    numtaps = 201
+    taps = firwin(numtaps, cutoff, fs=sr)
+    filtered_audio = lfilter(taps, 1.0, audio)
+    #normalise audio #BEWARE OF VOLUME BIASES
+    #max_value = max(abs(filtered_audio.max()), abs(filtered_audio.min()))
+    #normalized_audio = filtered_audio / max_value    
+    #return normalized_audio
+    return filtered_audio
 
 def md5(fname):
     hash_md5 = hashlib.md5()
