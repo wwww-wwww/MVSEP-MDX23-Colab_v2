@@ -1,3 +1,10 @@
+Adaptation of MVSep-MXD23 algorithm for Colab with few tweaks:
+* lowpass filter = model's cutoff
+* use gpu fix
+https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
+
+Original work =>
+---
 # MVSEP-MDX23-music-separation-model
 Model for [Sound demixing challenge 2023: Music Demixing Track - MDX'23](https://www.aicrowd.com/challenges/sound-demixing-challenge-2023). Model perform separation of music into 4 stems "bass", "drums", "vocals", "other". Model won 3rd place in challenge (Leaderboard C).
 
