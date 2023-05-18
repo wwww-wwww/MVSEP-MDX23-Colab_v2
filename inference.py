@@ -843,6 +843,12 @@ def lp_filter(audio):
     #normalized_audio = filtered_audio / max_value    
     #return normalized_audio
     return filtered_audio
+def lp_filter(audio):
+    sr = 44100
+    cutoff = 17400
+    b, a = signal.butter(10, cutoff, fs=sr)
+    filtered_audio = signal.filtfilt(b, a, audio)
+    return filtered_audio
 
 def md5(fname):
     hash_md5 = hashlib.md5()
