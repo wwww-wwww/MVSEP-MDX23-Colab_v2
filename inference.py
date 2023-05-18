@@ -24,7 +24,8 @@ import onnxruntime as ort
 from time import time
 import librosa
 import hashlib
-
+from scipy.signal import firwin, lfilter
+from scipy import signal
 
 class Conv_TDF_net_trim_model(nn.Module):
     def __init__(self, device, target_name, L, n_fft, hop=1024):
@@ -369,8 +370,6 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            # Lowpass mixture before inversion to avoid high frequencyh bleeding
-            #vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2 #<= original code
             vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
 
         if update_percent_func is not None:
@@ -386,10 +385,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
             vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
 
         # Generate instrumental
-        
-        # Lowpass mixture before inversion to avoid high frequencyh bleeding
-        #instrum = mixed_sound_array - vocals # <= original code
-        instrum = lp_filter(mixed_sound_array) - vocals
+        instrum = mixed_sound_array - vocals
+
 
         audio = np.expand_dims(instrum.T, axis=0)
         audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
@@ -634,7 +631,7 @@ class EnsembleDemucsMDXMusicSeparationModelLowGPU:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2
+            vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
             del infer_session2
             del mdx_models2
 
@@ -833,19 +830,7 @@ def predict_with_model(options):
 #add lowpass filter for models with cutoff
 def lp_filter(audio):
     sr = 44100
-    cutoff = 17400
-    # filtering
-    numtaps = 201
-    taps = firwin(numtaps, cutoff, fs=sr)
-    filtered_audio = lfilter(taps, 1.0, audio)
-    #normalise audio #BEWARE OF VOLUME BIASES
-    #max_value = max(abs(filtered_audio.max()), abs(filtered_audio.min()))
-    #normalized_audio = filtered_audio / max_value    
-    #return normalized_audio
-    return filtered_audio
-def lp_filter(audio):
-    sr = 44100
-    cutoff = 17400
+    cutoff = 17300
     b, a = signal.butter(10, cutoff, fs=sr)
     filtered_audio = signal.filtfilt(b, a, audio)
     return filtered_audio
