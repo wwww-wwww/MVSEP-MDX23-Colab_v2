@@ -370,7 +370,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
+            #vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
+            vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2
 
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.40) / total_files
@@ -631,7 +632,9 @@ class EnsembleDemucsMDXMusicSeparationModelLowGPU:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
+            #vocals_mdxb2 = lp_filter(mixed_sound_array.T) - instrum_mdxb2
+            vocals_mdxb2 = mixed_sound_array.T - instrum_mdxb2
+
             del infer_session2
             del mdx_models2
 
