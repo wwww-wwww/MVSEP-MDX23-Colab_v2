@@ -1,6 +1,5 @@
 Adaptation of MVSep-MXD23 algorithm for Colab with few tweaks:
-* lowpass filter = model's cutoff
-* use gpu fix
+* lowpass filter = model's cutoff (fix the mixture bleed above 17500hz in the vocals stem)
 
 https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
 
