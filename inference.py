@@ -855,6 +855,8 @@ if __name__ == '__main__':
     m.add_argument("--single_onnx", action='store_true', help="Only use single ONNX model for vocals. Can be useful if you have not enough GPU memory.")
     m.add_argument("--chunk_size", "-cz", type=int, help="Chunk size for ONNX models. Set lower to reduce GPU memory consumption. Default: 1000000", required=False, default=1000000)
     m.add_argument("--large_gpu", action='store_true', help="It will store all models on GPU for faster processing of multiple audio files. Requires 11 and more GB of free GPU memory.")
+    #m.add_argument("--shifts", type=int, help="Managing the Demucs 'shift trick' value.", required=False, default=1)
+    #m.add_argument("--mixer", action='store_true', help="uyse MdxMixer post-processing", required=False, default=False)
 
     options = m.parse_args().__dict__
     print("Options: ".format(options))
