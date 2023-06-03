@@ -1,6 +1,6 @@
 Adaptation of MVSep-MXD23 algorithm for Colab with few tweaks:
 * "Kim Vocal 2" model used instead of "Kim Inst"
-* Vocal stem use demucs only above the cutoff freq of Kim's models, to "fill the hole" (workaround for high frequency leaks from mixture)
+* TESTING : Vocal stem use demucs only above the cutoff freq of Kim's models, to "fill the hole" (workaround for high frequency leaks from mixture)
 
 https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
 
