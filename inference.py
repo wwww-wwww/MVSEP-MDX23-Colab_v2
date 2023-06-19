@@ -255,7 +255,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # MDX-B model 1 initialization
         self.chunk_size = chunk_size
         self.mdx_models1 = get_models('tdf_extra', load=False, device=device, vocals_model_type=2)
-        model_path_onnx1 = model_folder + 'Kim_Vocal_1.onnx'
+        model_path_onnx1 = model_folder + 'Kim_Vocal_2.onnx'
         remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_2.onnx'
         if not os.path.isfile(model_path_onnx1):
             torch.hub.download_url_to_file(remote_url_onnx1, model_path_onnx1)
@@ -272,7 +272,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.chunk_size = chunk_size
             self.mdx_models2 = get_models('tdf_extra', load=False, device=device, vocals_model_type=2)
             root_path = os.path.dirname(os.path.realpath(__file__)) + '/'
-            model_path_onnx2 = model_folder + 'Kim_Inst.onnx'
+            model_path_onnx2 = model_folder + 'UVR_MDX_Instr_HQ3.onnx'
             remote_url_onnx2 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Inst_HQ_3.onnx'
             if not os.path.isfile(model_path_onnx2):
                 torch.hub.download_url_to_file(remote_url_onnx2, model_path_onnx2)
@@ -576,8 +576,8 @@ class EnsembleDemucsMDXMusicSeparationModelLowGPU:
 
         # MDX-B model 1 initialization
         mdx_models1 = get_models('tdf_extra', load=False, device=self.device, vocals_model_type=2)
-        model_path_onnx1 = model_folder + 'Kim_Vocal_1.onnx'
-        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_1.onnx'
+        model_path_onnx1 = model_folder + 'Kim_Vocal_2.onnx'
+        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_2.onnx'
         if not os.path.isfile(model_path_onnx1):
             torch.hub.download_url_to_file(remote_url_onnx1, model_path_onnx1)
         print('Model path: {}'.format(model_path_onnx1))
@@ -608,8 +608,8 @@ class EnsembleDemucsMDXMusicSeparationModelLowGPU:
             # MDX-B model 2  initialization
             mdx_models2 = get_models('tdf_extra', load=False, device=self.device, vocals_model_type=2)
             root_path = os.path.dirname(os.path.realpath(__file__)) + '/'
-            model_path_onnx2 = model_folder + 'Kim_Inst.onnx'
-            remote_url_onnx2 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Inst.onnx'
+            model_path_onnx2 = model_folder + 'UVR_MDX_Instr_HQ3.onnx'
+            remote_url_onnx2 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Inst_HQ_3.onnx'
             if not os.path.isfile(model_path_onnx2):
                 torch.hub.download_url_to_file(remote_url_onnx2, model_path_onnx2)
             print('Model path: {}'.format(model_path_onnx2))
