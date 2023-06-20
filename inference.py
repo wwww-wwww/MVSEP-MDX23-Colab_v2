@@ -372,8 +372,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
             vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.021)
-            sf.write("/content/mdxb2.wav",vocals_mdxb2.T,44100)
-            #sys.exit()
+
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.40) / total_files
             update_percent_func(int(val))
