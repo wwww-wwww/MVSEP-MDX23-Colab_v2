@@ -411,7 +411,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
                 out = out[:4]
 
             out[0] = self.weights_drums[i] * out[0]
-            out[1] = self.weights_bass[i] * out[1]
+            out[1] = self.weights_bass[i] * out[1] * 1.0045
             out[2] = self.weights_other[i] * out[2]
             out[3] = self.weights_vocals[i] * out[3]
 
@@ -444,7 +444,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         separated_music_arrays['bass'] = (res + 2 * out[1].T) / 3.0
         output_sample_rates['bass'] = sample_rate
 
-        bass = separated_music_arrays['bass'] * 1.0045
+        bass = separated_music_arrays['bass']
         drums = separated_music_arrays['drums']
         other = separated_music_arrays['other']
 
