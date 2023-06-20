@@ -371,7 +371,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
-            vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.021)
+            vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.022)
 
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.40) / total_files
@@ -441,10 +441,10 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # bass
         res = mixed_sound_array - vocals - out[0].T - out[2].T
         res = np.clip(res, -1, 1)
-        separated_music_arrays['bass'] = ((res + 2 * out[1].T) / 3.0) * 1.004
+        separated_music_arrays['bass'] = (res + 2 * out[1].T) / 3.0
         output_sample_rates['bass'] = sample_rate
 
-        bass = separated_music_arrays['bass']
+        bass = separated_music_arrays['bass'] * 1.0045
         drums = separated_music_arrays['drums']
         other = separated_music_arrays['other']
 
