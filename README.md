@@ -1,5 +1,10 @@
 Adaptation of MVSep-MXD23 algorithm for Colab with few tweaks:
-* wip
+
+* Updated with Kim Vocal 2 instead of Kim Vocal 1, and UVR MDX Instr HQ3 instead of Kim Inst
+* Fixed unprocessed high frequency bleed in vocals stem (vocals stem is now really fullband !).
+* Added volume compensation (less bleed overall).
+
+
 
 https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
 
