@@ -386,7 +386,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
 
         # Generate instrumental
-        instrum = mixed_sound_array - vocals
+        instrum = (mixed_sound_array - vocals) * 1.002
 
 
         audio = np.expand_dims(instrum.T, axis=0)
@@ -441,7 +441,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # bass
         res = mixed_sound_array - vocals - out[0].T - out[2].T
         res = np.clip(res, -1, 1)
-        separated_music_arrays['bass'] = (res + 2 * out[1].T) / 3.0
+        separated_music_arrays['bass'] = ((res + 2 * out[1].T) / 3.0) * 1.004
         output_sample_rates['bass'] = sample_rate
 
         bass = separated_music_arrays['bass']
@@ -494,13 +494,13 @@ def predict_with_model(options):
             print('File created: {}'.format(output_folder + '/' + output_name))
 
         # instrumental part 1
-        inst = audio.T - result['vocals']
+        inst = (audio.T - result['vocals']) * 1.002
         output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format('instrum')
         sf.write(output_folder + '/' + output_name, inst, sr, subtype='FLOAT')
         print('File created: {}'.format(output_folder + '/' + output_name))
 
         # instrumental part 2
-        inst2 = result['bass'] + result['drums'] + result['other']
+        inst2 = (result['bass'] + result['drums'] + result['other']) * 1.004
         output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format('instrum2')
         sf.write(output_folder + '/' + output_name, inst2, sr, subtype='FLOAT')
         print('File created: {}'.format(output_folder + '/' + output_name))
