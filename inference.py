@@ -380,7 +380,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # Ensemble vocals for MDX and Demucs
         if self.single_onnx is False:
             weights = np.array([12, 8, 3])
-            vocals = lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals_mdxb2.T + weights[2] * vocals_demucs.T) / weights.sum(), 14000, 'lowpass') + lr_filter(((vocals_mdxb2.T + vocals_demucs.T) / 2), 14000, 'highpass')
+            vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals_mdxb2.T + weights[2] * vocals_demucs.T) / weights.sum(), 14000, 'lowpass') + lr_filter(((vocals_mdxb2.T + vocals_demucs.T) / 2), 14000, 'highpass')) * 1.004
         else:
             weights = np.array([6, 1])
             vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
