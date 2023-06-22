@@ -9,7 +9,7 @@ if __name__ == '__main__':
     print('GPU use: {}'.format(gpu_use))
     os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(gpu_use)
 
-
+from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
@@ -128,6 +128,7 @@ def demix_base(mix, device, models, infer_session):
             waves = np.array(mix_p[:, i:i + model.chunk_size])
             mix_waves.append(waves)
             i += gen_size
+        mix_waves = np.array(mix_waves)
         mix_waves = torch.tensor(mix_waves, dtype=torch.float32).to(device)
 
         with torch.no_grad():
@@ -328,6 +329,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         overlap_small = self.overlap_small
 
         # Get Demics vocal only
+        print('Processing vocals, step 1...')
         model = self.model_vocals_only
         shifts = 1
         overlap = overlap_large
@@ -336,13 +338,14 @@ class EnsembleDemucsMDXMusicSeparationModel:
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.10) / total_files
             update_percent_func(int(val))
-
+        print('Processing vocals, step 2...')
         vocals_demucs += 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
 
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.20) / total_files
             update_percent_func(int(val))
 
+        print('Processing vocals, step 3...')
         overlap = overlap_large
         sources1 = demix_full(
             mixed_sound_array.T,
@@ -358,6 +361,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.30) / total_files
             update_percent_func(int(val))
+        print('Processing vocals, step 4...')
 
         if self.single_onnx is False:
             sources2 = -demix_full(
@@ -368,11 +372,12 @@ class EnsembleDemucsMDXMusicSeparationModel:
                 self.infer_session2,
                 overlap=overlap
             )[0]
-
+            
             # it's instrumental so need to invert
             instrum_mdxb2 = sources2
             vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.022)
-
+            
+        print('Processing vocals: DONE!')
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.40) / total_files
             update_percent_func(int(val))
@@ -393,7 +398,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
         audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
 
         all_outs = []
-        for i, model in enumerate(self.models):
+        print('Demucs processing...')
+        for i, model in tqdm(enumerate(self.models), total=4):
             if i == 0:
                 overlap = overlap_small
             elif i > 0:
