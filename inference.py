@@ -257,8 +257,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # MDX-B model 1 initialization
         self.chunk_size = chunk_size
         self.mdx_models1 = get_models('tdf_extra', load=False, device=device, vocals_model_type=2)
-        model_path_onnx1 = model_folder + 'UVR-MDX-NET-Voc_FT.onnx'
-        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx'
+        model_path_onnx1 = model_folder + 'Kim_Vocal_2.onnx'
+        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_2.onnx'
         if not os.path.isfile(model_path_onnx1):
             torch.hub.download_url_to_file(remote_url_onnx1, model_path_onnx1)
         print('Model path: {}'.format(model_path_onnx1))
@@ -328,9 +328,26 @@ class EnsembleDemucsMDXMusicSeparationModel:
         overlap_large = self.overlap_large
         overlap_small = self.overlap_small
 
+        # Get Demics vocal only
         print('Processing vocals, step 1...')
+        model = self.model_vocals_only
+        shifts = 1
         overlap = overlap_large
-        sources1 = 0.5 * demix_full(
+        vocals_demucs = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
+
+        if update_percent_func is not None:
+            val = 100 * (current_file_number + 0.10) / total_files
+            update_percent_func(int(val))
+        print('Processing vocals, step 2...')
+        vocals_demucs += 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
+
+        if update_percent_func is not None:
+            val = 100 * (current_file_number + 0.20) / total_files
+            update_percent_func(int(val))
+
+        print('Processing vocals, step 3...')
+        overlap = overlap_large
+        sources1 = demix_full(
             mixed_sound_array.T,
             self.device,
             self.chunk_size,
@@ -338,32 +355,17 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.infer_session1,
             overlap=overlap
         )[0]
-        sources1 += 0.5 * -demix_full(
-            -mixed_sound_array.T,
-            self.device,
-            self.chunk_size,
-            self.mdx_models1,
-            self.infer_session1,
-            overlap=overlap
-        )[0]
-        vocals_mdxb1 = sources1 * 1.021
+
+        vocals_mdxb1 = sources1 * 1.0074
 
         if update_percent_func is not None:
             val = 100 * (current_file_number + 0.30) / total_files
             update_percent_func(int(val))
-        print('Processing vocals, step 2...')
+        print('Processing vocals, step 4...')
 
         if self.single_onnx is False:
-            sources2 = 0.5 * -demix_full(
+            sources2 = -demix_full(
                 -mixed_sound_array.T,
-                self.device,
-                self.chunk_size,
-                self.mdx_models2,
-                self.infer_session2,
-                overlap=overlap
-            )[0]
-            sources2 += 0.5 * demix_full(
-                mixed_sound_array.T,
                 self.device,
                 self.chunk_size,
                 self.mdx_models2,
@@ -382,14 +384,14 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
         # Ensemble vocals for MDX and Demucs
         if self.single_onnx is False:
-            weights = np.array([12, 4])
-            vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals_mdxb2.T) / weights.sum(), 15000, 'lowpass') + lr_filter(vocals_mdxb2.T, 14000, 'highpass')) * 1.004
+            weights = np.array([12, 8, 3])
+            vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals_mdxb2.T + weights[2] * vocals_demucs.T) / weights.sum(), 14000, 'lowpass') + lr_filter(((vocals_mdxb2.T + vocals_demucs.T) / 2), 14000, 'highpass')) * 1.004
         else:
             weights = np.array([6, 1])
             vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
 
         # Generate instrumental
-        instrum = (mixed_sound_array - vocals) # * 1.002
+        instrum = (mixed_sound_array - vocals) * 1.002
 
 
         audio = np.expand_dims(instrum.T, axis=0)
@@ -398,7 +400,6 @@ class EnsembleDemucsMDXMusicSeparationModel:
         all_outs = []
         print('Demucs processing...')
         for i, model in tqdm(enumerate(self.models), total=4):
-            shifts = 1
             if i == 0:
                 overlap = overlap_small
             elif i > 0:
