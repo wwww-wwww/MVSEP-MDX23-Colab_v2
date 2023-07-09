@@ -404,9 +404,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
                 overlap = overlap_small
             elif i > 0:
                 overlap = overlap_large
-            out = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy() \
-                  + 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
-
+            out = apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
+            
             if update_percent_func is not None:
                 val = 100 * (current_file_number + 0.50 + i * 0.10) / total_files
                 update_percent_func(int(val))
