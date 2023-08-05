@@ -10,6 +10,7 @@ Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 * Added "BigShift trick" for MDX models
 * Added separated overlap values for MDX, MDXv3 and Demucs
 * Fixed volume compensations fine-tuned
+* Fixed some memory issues
 
 **v2.1 (by deton24)**
 * Updated with MDX-VOC-FT instead of Kim Vocal 2
