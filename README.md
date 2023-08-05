@@ -20,8 +20,7 @@ Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 * Fixed high frequency bleed in vocals
 * Fixed volume compensation for MDX models
 
-https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
-
+https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/v2.2/MVSep-MDX23-Colab.ipynb
 
 
 ---
