@@ -479,7 +479,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
         vocals_mdxb1 = sources1 * 1.021
         # sf.write("vocals_mdxb1.wav", vocals_mdxb1.T, 44100)
                
+
         print('Processing vocals with UVR-MDX-VOC-FT Fullband SRS...')
+
         sourcesSRS = 0.5 * change_sr(demix_full(
             change_sr(mixed_sound_array.T,5,4),
             self.device,
@@ -499,7 +501,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
             bigshifts=options['bigshifts']//4
         )[0],4,5)
         
-        vocals_SRS = sourcesSRS * 1.021
+        vocals_SRS = match_array_shapes(sourcesSRS, mixed_sound_array.T)
+        
+        vocals_SRS = vocals_SRS * 1.021
         # sf.write("vocals_SRS.wav", vocals_SRS.T, 44100)
 
         del self.infer_session1
@@ -543,8 +547,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
         # Generate instrumental
         instrum = mixed_sound_array - vocals
-        print('Starting Demucs processing...')
+        
         if options['vocals_only'] is False:
+            print('Starting Demucs processing...')
             audio = np.expand_dims(instrum.T, axis=0)
             audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
     
@@ -729,6 +734,14 @@ def md5(fname):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
+
+def match_array_shapes(array_1:np.ndarray, array_2:np.ndarray):
+    if array_1.shape[1] > array_2.shape[1]:
+        array_1 = array_1[:,:array_2.shape[1]] 
+    elif array_1.shape[1] < array_2.shape[1]:
+        padding = array_2.shape[1] - array_1.shape[1]
+        array_1 = np.pad(array_1, ((0,0), (0,padding)), 'constant', constant_values=0)
+    return array_1
 
 if __name__ == '__main__':
     start_time = time()
