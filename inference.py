@@ -16,7 +16,6 @@ import torch.nn as nn
 import os
 import argparse
 import soundfile as sf
-from scipy.signal import firwin, lfilter
 from demucs.states import load_model
 from demucs import pretrained
 from demucs.apply import apply_model
@@ -24,9 +23,17 @@ import onnxruntime as ort
 from time import time
 import librosa
 import hashlib
-from scipy.signal import firwin, lfilter
 from scipy import signal
+import gc
+import yaml
+from ml_collections import ConfigDict
 import sys
+import math
+import pathlib
+import warnings
+from tfc_tdf_v3 import TFC_TDF_net
+from scipy.signal import resample_poly
+
 
 class Conv_TDF_net_trim_model(nn.Module):
     def __init__(self, device, target_name, L, n_fft, hop=1024):
@@ -104,6 +111,86 @@ def get_models(name, device, load=True, vocals_model_type=0):
 
     return [model_vocals]
 
+def demix_base_mdxv3(config, model, mix, device):
+        N = options["overlap_MDXv3"]
+        mix = torch.tensor(mix, dtype=torch.float32)
+        try:
+            S = model.num_target_instruments
+        except Exception as e:
+            S = model.module.num_target_instruments
+
+        mdx_window_size = config.inference.dim_t
+        
+        # batch_size = config.inference.batch_size
+        batch_size = 1
+        C = config.audio.hop_length * (mdx_window_size - 1)
+        
+
+        H = C // N
+        L = mix.shape[1]
+        pad_size = H - (L - C) % H
+        mix = torch.cat([torch.zeros(2, C - H), mix, torch.zeros(2, pad_size + C - H)], 1)
+        mix = mix.to(device)
+
+        chunks = []
+        i = 0
+        while i + C <= mix.shape[1]:
+            chunks.append(mix[:, i:i + C])
+            i += H
+        chunks = torch.stack(chunks)
+
+        batches = []
+        i = 0
+        while i < len(chunks):
+            batches.append(chunks[i:i + batch_size])
+            i = i + batch_size
+
+        X = torch.zeros(S, 2, C - H) if S > 1 else torch.zeros(2, C - H)
+        X = X.to(device)
+
+        with torch.cuda.amp.autocast():
+            with torch.no_grad():
+                for batch in tqdm(batches, ncols=60):
+                    # self.running_inference_progress_bar(len(batches))
+                    x = model(batch)
+                    for w in x:
+                        a = X[..., :-(C - H)]
+                        b = X[..., -(C - H):] + w[..., :(C - H)]
+                        c = w[..., (C - H):]
+                        X = torch.cat([a, b, c], -1)
+
+        estimated_sources = X[..., C - H:-(pad_size + C - H)] / N
+
+        if S > 1:
+            return {k: v for k, v in zip(config.training.instruments, estimated_sources.cpu().numpy())}
+        else:
+            est_s = estimated_sources.cpu().numpy()
+            return est_s
+
+def demix_full_mdx23c(mix, device):
+    model_folder = os.path.dirname(os.path.abspath(__file__)) + '/models/'
+    remote_url_mdxv3 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/MDX23C_D1581.ckpt'
+    remote_url_conf = 'https://raw.githubusercontent.com/Anjok07/ultimatevocalremovergui/new-patch-3-20/models/MDX_Net_Models/model_data/mdx_c_configs/model_2_stem_061321.yaml'
+    if not os.path.isfile(model_folder+'MDX23C_D1581.ckpt'):
+        torch.hub.download_url_to_file(remote_url_mdxv3, model_folder+'MDX23C_D1581.ckpt')
+    if not os.path.isfile(model_folder+'model_2_stem_061321.yaml'):
+        torch.hub.download_url_to_file(remote_url_conf, model_folder+'model_2_stem_061321.yaml')
+
+
+    with open(model_folder + 'model_2_stem_061321.yaml') as f:
+        config = ConfigDict(yaml.load(f, Loader=yaml.FullLoader))
+
+    model = TFC_TDF_net(config)
+    model.load_state_dict(torch.load(model_folder+'MDX23C_D1581.ckpt'))
+    device = torch.device(device)
+    model = model.to(device)
+    model.eval()
+
+    sources = demix_base_mdxv3(config, model, mix, device)
+    del model
+    gc.collect()
+    return sources
+
 
 def demix_base(mix, device, models, infer_session):
     start_time = time()
@@ -145,29 +232,47 @@ def demix_base(mix, device, models, infer_session):
     return np.array(sources)
 
 
-def demix_full(mix, device, chunk_size, models, infer_session, overlap=0.75):
+def demix_full(mix, device, chunk_size, models, infer_session, overlap=0.2, bigshifts=1):
     start_time = time()
-
     step = int(chunk_size * (1 - overlap))
-    # print('Initial shape: {} Chunk size: {} Step: {} Device: {}'.format(mix.shape, chunk_size, step, device))
-    result = np.zeros((1, 2, mix.shape[-1]), dtype=np.float32)
-    divider = np.zeros((1, 2, mix.shape[-1]), dtype=np.float32)
+    shift_number = bigshifts # must not be <= 0 !
+    if shift_number < 1:
+        shift_number=1
 
-    total = 0
-    for i in range(0, mix.shape[-1], step):
-        total += 1
+    mix_length = mix.shape[1] / 44100
+    if shift_number > int(mix_length):
+        shift_number = int(mix_length - 1)
+    shifts = [x for x in range(shift_number)]
+    results = []
+    
+    for shift in tqdm(shifts):
+        shift_samples = int(shift * 44100)
+        # print(f"shift_samples = {shift_samples}")
+        
+        shifted_mix = np.concatenate((mix[:, -shift_samples:], mix[:, :-shift_samples]), axis=-1)
+        # print(f"shifted_mix shape = {shifted_mix.shape}")
+        result = np.zeros((1, 2, shifted_mix.shape[-1]), dtype=np.float32)
+        divider = np.zeros((1, 2, shifted_mix.shape[-1]), dtype=np.float32)
 
-        start = i
-        end = min(i + chunk_size, mix.shape[-1])
-        # print('Chunk: {} Start: {} End: {}'.format(total, start, end))
-        mix_part = mix[:, start:end]
-        sources = demix_base(mix_part, device, models, infer_session)
-        # print(sources.shape)
-        result[..., start:end] += sources
-        divider[..., start:end] += 1
-    sources = result / divider
-    # print('Final shape: {} Overall time: {:.2f}'.format(sources.shape, time() - start_time))
-    return sources
+        total = 0
+        for i in range(0, shifted_mix.shape[-1], step):
+            total += 1
+
+            start = i
+            end = min(i + chunk_size, shifted_mix.shape[-1])
+            mix_part = shifted_mix[:, start:end]
+            # print(f"mix_part shape = {mix_part.shape}")
+            sources = demix_base(mix_part, device, models, infer_session)
+            result[..., start:end] += sources
+            # print(f"result shape = {result.shape}")
+            divider[..., start:end] += 1
+        result /= divider
+        # print(f"result shape = {result.shape}")
+        result = np.concatenate((result[..., shift_samples:], result[..., :shift_samples]), axis=-1)
+        results.append(result)
+        
+    results = np.mean(results, axis=0)
+    return results
 
 
 class EnsembleDemucsMDXMusicSeparationModel:
@@ -187,23 +292,23 @@ class EnsembleDemucsMDXMusicSeparationModel:
         if 'cpu' in options:
             if options['cpu']:
                 device = 'cpu'
-        print('Use device: {}'.format(device))
+        # print('Use device: {}'.format(device))
         self.single_onnx = False
         if 'single_onnx' in options:
             if options['single_onnx']:
                 self.single_onnx = True
-                print('Use single vocal ONNX')
-        self.overlap_large = float(options['overlap_large'])
-        self.overlap_small = float(options['overlap_small'])
-        if self.overlap_large > 0.99:
-            self.overlap_large = 0.99
-        if self.overlap_large < 0.0:
-            self.overlap_large = 0.0
-        if self.overlap_small > 0.99:
-            self.overlap_small = 0.99
-        if self.overlap_small < 0.0:
-            self.overlap_small = 0.0
-
+                # print('Use single vocal ONNX')
+        self.overlap_demucs = float(options['overlap_demucs'])
+        self.overlap_MDX = float(options['overlap_MDX'])
+        if self.overlap_demucs > 0.99:
+            self.overlap_demucs = 0.99
+        if self.overlap_demucs < 0.0:
+            self.overlap_demucs = 0.0
+        if self.overlap_MDX > 0.99:
+            self.overlap_MDX = 0.99
+        if self.overlap_MDX < 0.0:
+            self.overlap_MDX = 0.0
+        
         model_folder = os.path.dirname(os.path.realpath(__file__)) + '/models/'
         remote_url = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th'
         model_path = model_folder + '04573f0d-f3cf25b2.th'
@@ -213,37 +318,39 @@ class EnsembleDemucsMDXMusicSeparationModel:
         model_vocals.to(device)
         self.model_vocals_only = model_vocals
 
-        self.models = []
-        self.weights_vocals = np.array([10, 1, 8, 9])
-        self.weights_bass = np.array([19, 4, 5, 8])
-        self.weights_drums = np.array([18, 2, 4, 9])
-        self.weights_other = np.array([14, 2, 5, 10])
-
-        model1 = pretrained.get_model('htdemucs_ft')
-        model1.to(device)
-        self.models.append(model1)
-
-        model2 = pretrained.get_model('htdemucs')
-        model2.to(device)
-        self.models.append(model2)
-
-        model3 = pretrained.get_model('htdemucs_6s')
-        model3.to(device)
-        self.models.append(model3)
-
-        model4 = pretrained.get_model('hdemucs_mmi')
-        model4.to(device)
-        self.models.append(model4)
-
-        if 0:
-            for model in self.models:
-                print(model.sources)
-        '''
-        ['drums', 'bass', 'other', 'vocals']
-        ['drums', 'bass', 'other', 'vocals']
-        ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano']
-        ['drums', 'bass', 'other', 'vocals']
-        '''
+        if options['vocals_only'] is False:
+            self.models = []
+            self.weights_vocals = np.array([10, 1, 8, 9])
+            self.weights_bass = np.array([19, 4, 5, 8])
+            self.weights_drums = np.array([18, 2, 4, 9])
+            self.weights_other = np.array([14, 2, 5, 10])
+    
+            model1 = pretrained.get_model('htdemucs_ft')
+            model1.to(device)
+            self.models.append(model1)
+    
+            model2 = pretrained.get_model('htdemucs')
+            model2.to(device)
+            self.models.append(model2)
+    
+            model3 = pretrained.get_model('htdemucs_6s')
+            model3.to(device)
+            self.models.append(model3)
+    
+            model4 = pretrained.get_model('hdemucs_mmi')
+            model4.to(device)
+            self.models.append(model4)
+    
+            if 0:
+                for model in self.models:
+                  pass
+                  # print(model.sources)
+            '''
+            ['drums', 'bass', 'other', 'vocals']
+            ['drums', 'bass', 'other', 'vocals']
+            ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano']
+            ['drums', 'bass', 'other', 'vocals']
+            '''
 
         if device == 'cpu':
             chunk_size = 200000000
@@ -257,18 +364,18 @@ class EnsembleDemucsMDXMusicSeparationModel:
         # MDX-B model 1 initialization
         self.chunk_size = chunk_size
         self.mdx_models1 = get_models('tdf_extra', load=False, device=device, vocals_model_type=2)
-        model_path_onnx1 = model_folder + 'Kim_Vocal_2.onnx'
-        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/Kim_Vocal_2.onnx'
+        model_path_onnx1 = model_folder + 'UVR-MDX-NET-Voc_FT.onnx'
+        remote_url_onnx1 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx'
         if not os.path.isfile(model_path_onnx1):
             torch.hub.download_url_to_file(remote_url_onnx1, model_path_onnx1)
-        print('Model path: {}'.format(model_path_onnx1))
-        print('Device: {} Chunk size: {}'.format(device, chunk_size))
+        # print('Model path: {}'.format(model_path_onnx1))
+        # print('Device: {} Chunk size: {}'.format(device, chunk_size))
         self.infer_session1 = ort.InferenceSession(
             model_path_onnx1,
             providers=providers,
             provider_options=[{"device_id": 0}],
         )
-
+        
         if self.single_onnx is False:
             # MDX-B model 2  initialization
             self.chunk_size = chunk_size
@@ -278,21 +385,25 @@ class EnsembleDemucsMDXMusicSeparationModel:
             remote_url_onnx2 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Inst_HQ_3.onnx'
             if not os.path.isfile(model_path_onnx2):
                 torch.hub.download_url_to_file(remote_url_onnx2, model_path_onnx2)
-            print('Model path: {}'.format(model_path_onnx2))
-            print('Device: {} Chunk size: {}'.format(device, chunk_size))
+            # print('Model path: {}'.format(model_path_onnx2))
+            # print('Device: {} Chunk size: {}'.format(device, chunk_size))
             self.infer_session2 = ort.InferenceSession(
                 model_path_onnx2,
                 providers=providers,
                 provider_options=[{"device_id": 0}],
             )
+        
 
         self.device = device
         pass
         
     @property
     def instruments(self):
-        """ DO NOT CHANGE """
-        return ['bass', 'drums', 'other', 'vocals']
+
+        if options['vocals_only'] is False:
+            return ['bass', 'drums', 'other', 'vocals']
+        else:
+            return ['vocals']
 
     def raise_aicrowd_error(self, msg):
         """ Will be used by the evaluator to provide logs, DO NOT CHANGE """
@@ -302,7 +413,6 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self,
             mixed_sound_array,
             sample_rate,
-            update_percent_func=None,
             current_file_number=0,
             total_files=0,
     ):
@@ -325,146 +435,232 @@ class EnsembleDemucsMDXMusicSeparationModel:
         audio = np.expand_dims(mixed_sound_array.T, axis=0)
         audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
 
-        overlap_large = self.overlap_large
-        overlap_small = self.overlap_small
+        overlap_demucs = self.overlap_demucs
+        overlap_MDX = self.overlap_MDX
 
         # Get Demics vocal only
-        print('Processing vocals, step 1...')
+        print('Processing vocals with Demucs_ft...')
         model = self.model_vocals_only
-        shifts = 1
-        overlap = overlap_large
-        vocals_demucs = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
+        shifts = 0
+        overlap = overlap_demucs
+        vocals_demucs = apply_model(model, audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
+        
+        model_vocals = model.cpu()
+        del model_vocals
+        
+        print('Processing vocals with MDXv3 demo model...')
+        sources3 = demix_full_mdx23c(mixed_sound_array.T, self.device)
+        
+        vocals3 = (sources3['Vocals'] \
+                + lp_filter(14700, mixed_sound_array.T - sources3['Instrumental'], 44100)) / 2
 
-        if update_percent_func is not None:
-            val = 100 * (current_file_number + 0.10) / total_files
-            update_percent_func(int(val))
-        print('Processing vocals, step 2...')
-        vocals_demucs += 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0][3].cpu().numpy()
+        # sf.write("vocals3.wav", vocals3.T, 44100)
 
-        if update_percent_func is not None:
-            val = 100 * (current_file_number + 0.20) / total_files
-            update_percent_func(int(val))
-
-        print('Processing vocals, step 3...')
-        overlap = overlap_large
-        sources1 = demix_full(
+        print('Processing vocals with UVR-MDX-VOC-FT...')
+        overlap = overlap_MDX
+        sources1 = 0.5 * demix_full(
             mixed_sound_array.T,
             self.device,
             self.chunk_size,
             self.mdx_models1,
             self.infer_session1,
-            overlap=overlap
+            overlap=overlap,
+            bigshifts=options['bigshifts']
         )[0]
+        sources1 += 0.5 * -demix_full(
+            -mixed_sound_array.T,
+            self.device,
+            self.chunk_size,
+            self.mdx_models1,
+            self.infer_session1,
+            overlap=overlap,
+            bigshifts=options['bigshifts']
+        )[0]
+        vocals_mdxb1 = sources1 * 1.021
+        # sf.write("vocals_mdxb1.wav", vocals_mdxb1.T, 44100)
+               
+        print('Processing vocals with UVR-MDX-VOC-FT Fullband SRS...')
+        sourcesSRS = 0.5 * change_sr(demix_full(
+            change_sr(mixed_sound_array.T,5,4),
+            self.device,
+            self.chunk_size,
+            self.mdx_models1,
+            self.infer_session1,
+            overlap=overlap,
+            bigshifts=options['bigshifts']//4
+        )[0],4,5)
+        sourcesSRS += 0.5 * change_sr(-demix_full(
+            change_sr(-mixed_sound_array.T,5,4),
+            self.device,
+            self.chunk_size,
+            self.mdx_models1,
+            self.infer_session1,
+            overlap=overlap,
+            bigshifts=options['bigshifts']//4
+        )[0],4,5)
+        
+        vocals_SRS = sourcesSRS * 1.021
+        # sf.write("vocals_SRS.wav", vocals_SRS.T, 44100)
 
-        vocals_mdxb1 = sources1 * 1.0074
+        del self.infer_session1
+        del self.mdx_models1
+        gc.collect()
+        print('Processing vocals with UVR-MDX-HQ3-Instr...')
 
-        if update_percent_func is not None:
-            val = 100 * (current_file_number + 0.30) / total_files
-            update_percent_func(int(val))
-        print('Processing vocals, step 4...')
-
-        if self.single_onnx is False:
-            sources2 = -demix_full(
-                -mixed_sound_array.T,
-                self.device,
-                self.chunk_size,
-                self.mdx_models2,
-                self.infer_session2,
-                overlap=overlap
-            )[0]
-            
-            # it's instrumental so need to invert
-            instrum_mdxb2 = sources2
-            vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.022)
-            
+        sources2 = 0.5 * -demix_full(
+            -mixed_sound_array.T,
+            self.device,
+            self.chunk_size,
+            self.mdx_models2,
+            self.infer_session2,
+            overlap=overlap,
+            bigshifts=options['bigshifts']//6
+        )[0]
+        sources2 += 0.5 * demix_full(
+            mixed_sound_array.T,
+            self.device,
+            self.chunk_size,
+            self.mdx_models2,
+            self.infer_session2,
+            overlap=overlap,
+            bigshifts=options['bigshifts']//6
+        )[0]
+        
+        # it's instrumental so need to invert
+        instrum_mdxb2 = sources2
+        vocals_mdxb2 = mixed_sound_array.T - (instrum_mdxb2 * 1.022)
+        
+        #  sf.write("vocals_mdxb2.wav", vocals_mdxb2.T, 44100)
+        
+        del self.infer_session2
+        del self.mdx_models2
         print('Processing vocals: DONE!')
-        if update_percent_func is not None:
-            val = 100 * (current_file_number + 0.40) / total_files
-            update_percent_func(int(val))
-
+        gc.collect()
         # Ensemble vocals for MDX and Demucs
-        if self.single_onnx is False:
-            weights = np.array([12, 8, 3])
-            vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals_mdxb2.T + weights[2] * vocals_demucs.T) / weights.sum(), 14000, 'lowpass') + lr_filter(((vocals_mdxb2.T + vocals_demucs.T) / 2), 14000, 'highpass')) * 1.004
-        else:
-            weights = np.array([6, 1])
-            vocals = (weights[0] * vocals_mdxb1.T + weights[1] * vocals_demucs.T) / weights.sum()
+        weights = np.array([5, 6, 2])
+        vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals3.T + weights[2] * vocals_mdxb2.T) / weights.sum(), 12000, 'lowpass') \
+                + lr_filter((3 * vocals_SRS.T + vocals_demucs.T) / 4, 12000, 'highpass')) * 1.0074 # to confirm
 
         # Generate instrumental
-        instrum = (mixed_sound_array - vocals) * 1.002
-
-
-        audio = np.expand_dims(instrum.T, axis=0)
-        audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
-
-        all_outs = []
-        print('Demucs processing...')
-        for i, model in tqdm(enumerate(self.models), total=4):
-            if i == 0:
-                overlap = overlap_small
-            elif i > 0:
-                overlap = overlap_large
-            out = apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
-            
-            if update_percent_func is not None:
-                val = 100 * (current_file_number + 0.50 + i * 0.10) / total_files
-                update_percent_func(int(val))
-
-            if i == 2:
-                # ['drums', 'bass', 'other', 'vocals', 'guitar', 'piano']
-                out[2] = out[2] + out[4] + out[5]
-                out = out[:4]
-
+        instrum = mixed_sound_array - vocals
+        print('Starting Demucs processing...')
+        if options['vocals_only'] is False:
+            audio = np.expand_dims(instrum.T, axis=0)
+            audio = torch.from_numpy(audio).type('torch.FloatTensor').to(self.device)
+    
+            all_outs = []
+            print('Processing with htdemucs_ft...')
+            i = 0
+            overlap = overlap_demucs
+            model = pretrained.get_model('htdemucs_ft')
+            model.to(self.device)
+            out = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy() \
+                  + 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
+       
             out[0] = self.weights_drums[i] * out[0]
-            out[1] = self.weights_bass[i] * out[1] * 1.0045
+            out[1] = self.weights_bass[i] * out[1]
             out[2] = self.weights_other[i] * out[2]
             out[3] = self.weights_vocals[i] * out[3]
-
             all_outs.append(out)
-        out = np.array(all_outs).sum(axis=0)
-        out[0] = out[0] / self.weights_drums.sum()
-        out[1] = out[1] / self.weights_bass.sum()
-        out[2] = out[2] / self.weights_other.sum()
-        out[3] = out[3] / self.weights_vocals.sum()
+            model = model.cpu()
+            del model
+            gc.collect()
+            i = 1
+            print('Processing with htdemucs...')
+            overlap = overlap_demucs
+            model = pretrained.get_model('htdemucs')
+            model.to(self.device)
+            out = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy() \
+                  + 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
+    
+            out[0] = self.weights_drums[i] * out[0]
+            out[1] = self.weights_bass[i] * out[1]
+            out[2] = self.weights_other[i] * out[2]
+            out[3] = self.weights_vocals[i] * out[3]
+            all_outs.append(out)
+            model = model.cpu()
+            del model
+            gc.collect()
+            i = 2
+            print('Processing with htdemucs_6s...')
+            overlap = overlap_demucs
+            model = pretrained.get_model('htdemucs_6s')
+            model.to(self.device)
+            out = apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
+       
+            # More stems need to add
+            out[2] = out[2] + out[4] + out[5]
+            out = out[:4]
+            out[0] = self.weights_drums[i] * out[0]
+            out[1] = self.weights_bass[i] * out[1]
+            out[2] = self.weights_other[i] * out[2]
+            out[3] = self.weights_vocals[i] * out[3]
+            all_outs.append(out)
+            model = model.cpu()
+            del model
+            gc.collect()
+            i = 3
+            print('Processing with htdemucs_mmi...')
+            model = pretrained.get_model('hdemucs_mmi')
+            model.to(self.device)
+            out = 0.5 * apply_model(model, audio, shifts=shifts, overlap=overlap)[0].cpu().numpy() \
+                  + 0.5 * -apply_model(model, -audio, shifts=shifts, overlap=overlap)[0].cpu().numpy()
+       
+            out[0] = self.weights_drums[i] * out[0]
+            out[1] = self.weights_bass[i] * out[1]
+            out[2] = self.weights_other[i] * out[2]
+            out[3] = self.weights_vocals[i] * out[3]
+            all_outs.append(out)
+            model = model.cpu()
+            del model
+            gc.collect()
+            out = np.array(all_outs).sum(axis=0)
+            out[0] = out[0] / self.weights_drums.sum()
+            out[1] = out[1] / self.weights_bass.sum()
+            out[2] = out[2] / self.weights_other.sum()
+            out[3] = out[3] / self.weights_vocals.sum()
 
+            # other
+            res = mixed_sound_array - vocals - out[0].T - out[1].T
+            res = np.clip(res, -1, 1)
+            separated_music_arrays['other'] = (2 * res + out[2].T) / 3.0
+            output_sample_rates['other'] = sample_rate
+    
+            # drums
+            res = mixed_sound_array - vocals - out[1].T - out[2].T
+            res = np.clip(res, -1, 1)
+            separated_music_arrays['drums'] = (res + 2 * out[0].T.copy()) / 3.0
+            output_sample_rates['drums'] = sample_rate
+    
+            # bass
+            res = mixed_sound_array - vocals - out[0].T - out[2].T
+            res = np.clip(res, -1, 1)
+            separated_music_arrays['bass'] = (res + 2 * out[1].T) / 3.0
+            output_sample_rates['bass'] = sample_rate
+    
+            bass = separated_music_arrays['bass']
+            drums = separated_music_arrays['drums']
+            other = separated_music_arrays['other']
+    
+            separated_music_arrays['other'] = mixed_sound_array - vocals - bass - drums
+            separated_music_arrays['drums'] = mixed_sound_array - vocals - bass - other
+            separated_music_arrays['bass'] = mixed_sound_array - vocals - drums - other
+            
+            
         # vocals
         separated_music_arrays['vocals'] = vocals
         output_sample_rates['vocals'] = sample_rate
-
-        # other
-        res = mixed_sound_array - vocals - out[0].T - out[1].T
-        res = np.clip(res, -1, 1)
-        separated_music_arrays['other'] = (2 * res + out[2].T) / 3.0
-        output_sample_rates['other'] = sample_rate
-
-        # drums
-        res = mixed_sound_array - vocals - out[1].T - out[2].T
-        res = np.clip(res, -1, 1)
-        separated_music_arrays['drums'] = (res + 2 * out[0].T.copy()) / 3.0
-        output_sample_rates['drums'] = sample_rate
-
-        # bass
-        res = mixed_sound_array - vocals - out[0].T - out[2].T
-        res = np.clip(res, -1, 1)
-        separated_music_arrays['bass'] = (res + 2 * out[1].T) / 3.0
-        output_sample_rates['bass'] = sample_rate
-
-        bass = separated_music_arrays['bass']
-        drums = separated_music_arrays['drums']
-        other = separated_music_arrays['other']
-
-        separated_music_arrays['other'] = mixed_sound_array - vocals - bass - drums
-        separated_music_arrays['drums'] = mixed_sound_array - vocals - bass - other
-        separated_music_arrays['bass'] = mixed_sound_array - vocals - drums - other
-
-        if update_percent_func is not None:
-            val = 100 * (current_file_number + 0.95) / total_files
-            update_percent_func(int(val))
+        
+        # instrum
+        separated_music_arrays['instrum'] = instrum
 
         return separated_music_arrays, output_sample_rates
 
 
 def predict_with_model(options):
+
+    output_format = options['output_format']
+
     for input_audio in options['input_audio']:
         if not os.path.isfile(input_audio):
             print('Error. No such file: {}. Please check path!'.format(input_audio))
@@ -474,17 +670,7 @@ def predict_with_model(options):
         os.mkdir(output_folder)
 
     model = None
-    if 'large_gpu' in options:
-        if options['large_gpu'] is True:
-            print('Use fast large GPU memory version of code')
-            model = EnsembleDemucsMDXMusicSeparationModel(options)
-    if model is None:
-        print('Use low GPU memory version of code')
-        model = EnsembleDemucsMDXMusicSeparationModelLowGPU(options)
-
-    update_percent_func = None
-    if 'update_percent_func' in options:
-        update_percent_func = options['update_percent_func']
+    model = EnsembleDemucsMDXMusicSeparationModel(options)
 
     for i, input_audio in enumerate(options['input_audio']):
         print('Go for: {}'.format(input_audio))
@@ -492,37 +678,49 @@ def predict_with_model(options):
         if len(audio.shape) == 1:
             audio = np.stack([audio, audio], axis=0)
         print("Input audio: {} Sample rate: {}".format(audio.shape, sr))
-        result, sample_rates = model.separate_music_file(audio.T, sr, update_percent_func, i, len(options['input_audio']))
+        result, sample_rates = model.separate_music_file(audio.T, sr, i, len(options['input_audio']))
         for instrum in model.instruments:
             output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format(instrum)
-            sf.write(output_folder + '/' + output_name, result[instrum], sample_rates[instrum], subtype='FLOAT')
+            sf.write(output_folder + '/' + output_name, result[instrum], sample_rates[instrum], subtype=output_format)
             print('File created: {}'.format(output_folder + '/' + output_name))
 
         # instrumental part 1
-        inst = (audio.T - result['vocals']) * 1.002
+        # inst = (audio.T - result['vocals']) # * 1.002
+        inst = result['instrum']
         output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format('instrum')
-        sf.write(output_folder + '/' + output_name, inst, sr, subtype='FLOAT')
+        sf.write(output_folder + '/' + output_name, inst, sr, subtype=output_format)
         print('File created: {}'.format(output_folder + '/' + output_name))
-
-        # instrumental part 2
-        inst2 = (result['bass'] + result['drums'] + result['other']) * 1.004
-        output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format('instrum2')
-        sf.write(output_folder + '/' + output_name, inst2, sr, subtype='FLOAT')
-        print('File created: {}'.format(output_folder + '/' + output_name))
-
-    if update_percent_func is not None:
-        val = 100
-        update_percent_func(int(val))
+        
+        if options['vocals_only'] is False:
+            # instrumental part 2
+            inst2 = (result['bass'] + result['drums'] + result['other']) # 1.004
+            output_name = os.path.splitext(os.path.basename(input_audio))[0] + '_{}.wav'.format('instrum2')
+            sf.write(output_folder + '/' + output_name, inst2, sr, subtype=output_format)
+            print('File created: {}'.format(output_folder + '/' + output_name))
 
 
-# lowpass filter
-def lr_filter(audio, cutoff, filter_type, order=4, sr=44100):
+# Linkwitz-Riley filter
+def lr_filter(audio, cutoff, filter_type, order=6, sr=44100):
     audio = audio.T
     nyquist = 0.5 * sr
     normal_cutoff = cutoff / nyquist
     b, a = signal.butter(order//2, normal_cutoff, btype=filter_type, analog=False)
     filtered_audio = signal.filtfilt(b, a, audio)
     return filtered_audio.T
+
+# SRS
+def change_sr(data, up, down):
+    data = data.T
+    # print(f"SRS input audio shape: {data.shape}")
+    new_data = resample_poly(data, up, down)
+    # print(f"SRS output audio shape: {new_data.shape}")
+    return new_data.T
+
+# Lowpass filter
+def lp_filter(cutoff, data, sample_rate):
+    b = signal.firwin(1001, cutoff, fs=sample_rate)
+    filtered_data = signal.filtfilt(b, [1.0], data)
+    return filtered_data
 
 def md5(fname):
     hash_md5 = hashlib.md5()
@@ -539,21 +737,32 @@ if __name__ == '__main__':
     m.add_argument("--input_audio", "-i", nargs='+', type=str, help="Input audio location. You can provide multiple files at once", required=True)
     m.add_argument("--output_folder", "-r", type=str, help="Output audio folder", required=True)
     m.add_argument("--cpu", action='store_true', help="Choose CPU instead of GPU for processing. Can be very slow.")
-    m.add_argument("--overlap_large", "-ol", type=float, help="Overlap of splited audio for light models. Closer to 1.0 - slower", required=False, default=0.6)
-    m.add_argument("--overlap_small", "-os", type=float, help="Overlap of splited audio for heavy models. Closer to 1.0 - slower", required=False, default=0.5)
+    m.add_argument("--overlap_demucs", "-ol", type=float, help="Overlap of splited audio for light models. Closer to 1.0 - slower", required=False, default=0.6)
+    m.add_argument("--overlap_MDX", "-os", type=float, help="Overlap of splited audio for heavy models. Closer to 1.0 - slower", required=False, default=0.5)
+    m.add_argument("--overlap_MDXv3", type=int, help="MDXv3 overlap", required=False, default=10)
     m.add_argument("--single_onnx", action='store_true', help="Only use single ONNX model for vocals. Can be useful if you have not enough GPU memory.")
     m.add_argument("--chunk_size", "-cz", type=int, help="Chunk size for ONNX models. Set lower to reduce GPU memory consumption. Default: 1000000", required=False, default=1000000)
     m.add_argument("--large_gpu", action='store_true', help="It will store all models on GPU for faster processing of multiple audio files. Requires 11 and more GB of free GPU memory.")
-    #m.add_argument("--shifts", type=int, help="Managing the Demucs 'shift trick' value.", required=False, default=1)
+    m.add_argument("--bigshifts", type=int, help="Managing MDX 'BigShifts' trick value.", required=False, default=1)
+    m.add_argument("--vocals_only", type=bool, help="Vocals + instrumental only", required=False, default=False)
+    m.add_argument("--output_format", type=str, help="Output audio folder", default="FLOAT")
+    
     #m.add_argument("--mixer", action='store_true', help="uyse MdxMixer post-processing", required=False, default=False)
-
+    
+    
     options = m.parse_args().__dict__
-    print("Options: ".format(options))
-    for el in options:
-        print('{}: {}'.format(el, options[el]))
+    print("Options: ")
+    print(f'overlap_demucs: {options["overlap_demucs"]}')
+    print(f'overlap_MDX: {options["overlap_MDX"]}')
+    print(f'overlap_MDXv3: {options["overlap_MDXv3"]}')
+    print(f'bigshifts: {options["bigshifts"]}')
+    print(f'chunk_size: {options["chunk_size"]}')
+    print(f'vocals_only: {options["vocals_only"]}')
+    print(f'output_format: {options["output_format"]}')
     predict_with_model(options)
     print('Time: {:.0f} sec'.format(time() - start_time))
     print('Presented by https://mvsep.com')
+
 
 
 """
@@ -562,7 +771,7 @@ Example:
     --input_audio mixture.wav mixture1.wav
     --output_folder ./results/
     --cpu
-    --overlap_large 0.25
-    --overlap_small 0.25
+    --overlap_demucs 0.25
+    --overlap_MDX 0.25
     --chunk_size 500000
 """
