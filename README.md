@@ -1,13 +1,30 @@
-Adaptation of MVSep-MXD23 algorithm for Colab with few tweaks:
+# MVSEP-MDX23-Colab fork v2.2
+Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 
-* Updated with Kim Vocal 2 instead of Kim Vocal 1, and UVR MDX Instr HQ3 instead of Kim Inst
-* Fixed unprocessed high frequency bleed in vocals stem (vocals stem is now really fullband !).
-* Added volume compensation (less bleed overall).
+**v2.2**
+* Added MDXv3 compatibility
+* Added MDXv3 demo model D1581 in vocals stem multiband ensemble
+* Added MDX-VOC-FT *Fullband SRS* in vocals stem multiband ensemble
+* Added option to output only vocals/instrum stems (faster processing)
+* Added 16bit output format option
+* Added "BigShift trick" for MDX models
+* Added separated overlap values for MDX, MDXv3 and Demucs
+* Fixed volume compensations fine-tuned
 
+**v2.1 (by deton24)**
+* Updated with MDX-VOC-FT instead of Kim Vocal 2
 
+**v2.0**
+* Updated with new Kim Vocal 2 & UVR-MDX-Instr-HQ3 models
+* Folder batch processing
+* Fixed high frequency bleed in vocals
+* Fixed volume compensation for MDX models
 
 https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/main/MVSep-MDX23-Colab.ipynb
 
+
+
+---
 Original work =>
 ---
 # MVSEP-MDX23-music-separation-model
