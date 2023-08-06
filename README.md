@@ -12,10 +12,10 @@ Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 * Fixed volume compensations fine-tuned
 * Fixed some memory issues
 
-**v2.1 (by deton24)**
+[**v2.1 (by deton24)**](https://github.com/deton24/MVSEP-MDX23-Colab_v2.1)
 * Updated with MDX-VOC-FT instead of Kim Vocal 2
 
-**v2.0**
+[**v2.0**](https://github.com/jarredou/MVSEP-MDX23-Colab_v2/tree/2.0)
 * Updated with new Kim Vocal 2 & UVR-MDX-Instr-HQ3 models
 * Folder batch processing
 * Fixed high frequency bleed in vocals
