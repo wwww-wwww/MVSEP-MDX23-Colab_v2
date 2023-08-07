@@ -489,7 +489,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.mdx_models1,
             self.infer_session1,
             overlap=overlap,
-            bigshifts=options['bigshifts']//4
+            bigshifts=options['bigshifts']//5
         )[0],4,5)
         sourcesSRS += 0.5 * change_sr(-demix_full(
             change_sr(-mixed_sound_array.T,5,4),
@@ -498,7 +498,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.mdx_models1,
             self.infer_session1,
             overlap=overlap,
-            bigshifts=options['bigshifts']//4
+            bigshifts=options['bigshifts']//5
         )[0],4,5)
         
         vocals_SRS = match_array_shapes(sourcesSRS, mixed_sound_array.T)
@@ -518,7 +518,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.mdx_models2,
             self.infer_session2,
             overlap=overlap,
-            bigshifts=options['bigshifts']//6
+            bigshifts=options['bigshifts']//2
         )[0]
         sources2 += 0.5 * demix_full(
             mixed_sound_array.T,
@@ -527,7 +527,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.mdx_models2,
             self.infer_session2,
             overlap=overlap,
-            bigshifts=options['bigshifts']//6
+            bigshifts=options['bigshifts']//2
         )[0]
         
         # it's instrumental so need to invert
