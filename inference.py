@@ -541,7 +541,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         print('Processing vocals: DONE!')
         gc.collect()
         # Ensemble vocals for MDX and Demucs
-        weights = np.array([5, 6, 2])
+        weights = np.array([options["weight_VOCFT"], options["weight_MDXv3"], options["weight_HQ3"]])
         vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals3.T + weights[2] * vocals_mdxb2.T) / weights.sum(), 12000, 'lowpass') \
                 + lr_filter((3 * vocals_SRS.T + vocals_demucs.T) / 4, 12000, 'highpass')) * 1.0074 # to confirm
 
@@ -745,7 +745,7 @@ def match_array_shapes(array_1:np.ndarray, array_2:np.ndarray):
 
 if __name__ == '__main__':
     start_time = time()
-
+    print("started!")
     m = argparse.ArgumentParser()
     m.add_argument("--input_audio", "-i", nargs='+', type=str, help="Input audio location. You can provide multiple files at once", required=True)
     m.add_argument("--output_folder", "-r", type=str, help="Output audio folder", required=True)
@@ -753,6 +753,9 @@ if __name__ == '__main__':
     m.add_argument("--overlap_demucs", "-ol", type=float, help="Overlap of splited audio for light models. Closer to 1.0 - slower", required=False, default=0.6)
     m.add_argument("--overlap_MDX", "-os", type=float, help="Overlap of splited audio for heavy models. Closer to 1.0 - slower", required=False, default=0.5)
     m.add_argument("--overlap_MDXv3", type=int, help="MDXv3 overlap", required=False, default=10)
+    m.add_argument("--weight_MDXv3", type=int, help="Weight of MDXv3 model", required=False, default=6)
+    m.add_argument("--weight_VOCFT", type=int, help="Weight of VOC-FT model", required=False, default=5)
+    m.add_argument("--weight_HQ3", type=int, help="Weight of HQ3 Instr model", required=False, default=2)
     m.add_argument("--single_onnx", action='store_true', help="Only use single ONNX model for vocals. Can be useful if you have not enough GPU memory.")
     m.add_argument("--chunk_size", "-cz", type=int, help="Chunk size for ONNX models. Set lower to reduce GPU memory consumption. Default: 1000000", required=False, default=1000000)
     m.add_argument("--large_gpu", action='store_true', help="It will store all models on GPU for faster processing of multiple audio files. Requires 11 and more GB of free GPU memory.")
@@ -770,6 +773,9 @@ if __name__ == '__main__':
     print(f'overlap_MDXv3: {options["overlap_MDXv3"]}')
     print(f'bigshifts: {options["bigshifts"]}')
     print(f'chunk_size: {options["chunk_size"]}')
+    print(f'weight_MDXv3: {options["weight_MDXv3"]}')
+    print(f'weight_VOCFT: {options["weight_VOCFT"]}')
+    print(f'weight_HQ3: {options["weight_HQ3"]}')    
     print(f'vocals_only: {options["vocals_only"]}')
     print(f'output_format: {options["output_format"]}')
     predict_with_model(options)
