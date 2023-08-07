@@ -450,7 +450,11 @@ class EnsembleDemucsMDXMusicSeparationModel:
         
         print('Processing vocals with MDXv3 demo model...')
         sources3 = demix_full_mdx23c(mixed_sound_array.T, self.device)
-        vocals3 = sources3['Vocals']
+        
+        vocals3 = (match_array_shapes(sources3['Vocals'], mixed_sound_array.T) \
+                + lp_filter(14700, mixed_sound_array.T - match_array_shapes(sources3['Instrumental'], mixed_sound_array.T), 44100)) / 2
+        
+        # sf.write("vocals3.wav", vocals3.T, 44100)
 
         print('Processing vocals with UVR-MDX-VOC-FT...')
         overlap = overlap_MDX
