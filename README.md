@@ -4,6 +4,11 @@ Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 **v2.2.2**
 * D1581 demo model replaced by new InstVocHQ MDXv3 model.
 
+**v2.2.1**
+* Added custom weights feature
+* Fixed some bugs
+* Fixed input: you can use a file or a folder as input now
+
 **v2.2**
 * Added MDXv3 compatibility
 * Added MDXv3 demo model D1581 in vocals stem multiband ensemble
