@@ -169,19 +169,19 @@ def demix_base_mdxv3(config, model, mix, device):
 
 def demix_full_mdx23c(mix, device):
     model_folder = os.path.dirname(os.path.abspath(__file__)) + '/models/'
-    remote_url_mdxv3 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/MDX23C_D1581.ckpt'
-    remote_url_conf = 'https://raw.githubusercontent.com/Anjok07/ultimatevocalremovergui/new-patch-3-20/models/MDX_Net_Models/model_data/mdx_c_configs/model_2_stem_061321.yaml'
-    if not os.path.isfile(model_folder+'MDX23C_D1581.ckpt'):
-        torch.hub.download_url_to_file(remote_url_mdxv3, model_folder+'MDX23C_D1581.ckpt')
-    if not os.path.isfile(model_folder+'model_2_stem_061321.yaml'):
-        torch.hub.download_url_to_file(remote_url_conf, model_folder+'model_2_stem_061321.yaml')
+    remote_url_mdxv3 = 'https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/MDX23C-8KFFT-InstVoc_HQ.ckpt'
+    remote_url_conf = 'https://raw.githubusercontent.com/TRvlvr/application_data/main/mdx_model_data/mdx_c_configs/model_2_stem_full_band_8k.yaml'
+    if not os.path.isfile(model_folder+'MDX23C-8KFFT-InstVoc_HQ.ckpt'):
+        torch.hub.download_url_to_file(remote_url_mdxv3, model_folder+'MDX23C-8KFFT-InstVoc_HQ.ckpt')
+    if not os.path.isfile(model_folder+'model_2_stem_full_band_8k.yaml'):
+        torch.hub.download_url_to_file(remote_url_conf, model_folder+'model_2_stem_full_band_8k.yaml')
 
 
-    with open(model_folder + 'model_2_stem_061321.yaml') as f:
+    with open(model_folder + 'model_2_stem_full_band_8k.yaml') as f:
         config = ConfigDict(yaml.load(f, Loader=yaml.FullLoader))
 
     model = TFC_TDF_net(config)
-    model.load_state_dict(torch.load(model_folder+'MDX23C_D1581.ckpt'))
+    model.load_state_dict(torch.load(model_folder+'MDX23C-8KFFT-InstVoc_HQ.ckpt'))
     device = torch.device(device)
     model = model.to(device)
     model.eval()
@@ -437,7 +437,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
         overlap_demucs = self.overlap_demucs
         overlap_MDX = self.overlap_MDX
-
+        shifts = 0
+        overlap = overlap_demucs
+        """
         # Get Demics vocal only
         print('Processing vocals with Demucs_ft...')
         model = self.model_vocals_only
@@ -448,12 +450,15 @@ class EnsembleDemucsMDXMusicSeparationModel:
         
         model_vocals = model.cpu()
         del model_vocals
-        
+        """
         print('Processing vocals with MDXv3 demo model...')
         sources3 = demix_full_mdx23c(mixed_sound_array.T, self.device)
         
         vocals3 = (match_array_shapes(sources3['Vocals'], mixed_sound_array.T) \
-                + lp_filter(14700, mixed_sound_array.T - match_array_shapes(sources3['Instrumental'], mixed_sound_array.T), 44100)) / 2
+                + (mixed_sound_array.T - match_array_shapes(sources3['Instrumental'], mixed_sound_array.T))) / 2
+        
+        #sf.write("vocals3.wav", sources3['Vocals'].T, 44100)
+        #sf.write("instru3.wav", sources3['Instrumental'].T, 44100)
         
         # sf.write("vocals3.wav", vocals3.T, 44100)
 
@@ -479,33 +484,6 @@ class EnsembleDemucsMDXMusicSeparationModel:
         )[0]
         vocals_mdxb1 = sources1 * 1.021
         # sf.write("vocals_mdxb1.wav", vocals_mdxb1.T, 44100)
-               
-
-        print('Processing vocals with UVR-MDX-VOC-FT Fullband SRS...')
-
-        sourcesSRS = 0.5 * change_sr(demix_full(
-            change_sr(mixed_sound_array.T,5,4),
-            self.device,
-            self.chunk_size,
-            self.mdx_models1,
-            self.infer_session1,
-            overlap=overlap,
-            bigshifts=options['bigshifts']//5
-        )[0],4,5)
-        sourcesSRS += 0.5 * change_sr(-demix_full(
-            change_sr(-mixed_sound_array.T,5,4),
-            self.device,
-            self.chunk_size,
-            self.mdx_models1,
-            self.infer_session1,
-            overlap=overlap,
-            bigshifts=options['bigshifts']//5
-        )[0],4,5)
-        
-        vocals_SRS = match_array_shapes(sourcesSRS, mixed_sound_array.T)
-        
-        vocals_SRS = vocals_SRS * 1.021
-        # sf.write("vocals_SRS.wav", vocals_SRS.T, 44100)
 
         del self.infer_session1
         del self.mdx_models1
@@ -543,8 +521,8 @@ class EnsembleDemucsMDXMusicSeparationModel:
         gc.collect()
         # Ensemble vocals for MDX and Demucs
         weights = np.array([options["weight_VOCFT"], options["weight_MDXv3"], options["weight_HQ3"]])
-        vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals3.T + weights[2] * vocals_mdxb2.T) / weights.sum(), 12000, 'lowpass') \
-                + lr_filter((3 * vocals_SRS.T + vocals_demucs.T) / 4, 12000, 'highpass')) * 1.0074 # to confirm
+        vocals = (lr_filter((weights[0] * vocals_mdxb1.T + weights[1] * vocals3.T + weights[2] * vocals_mdxb2.T) / weights.sum(), 14000, 'lowpass') \
+                + lr_filter(vocals3.T, 14000, 'highpass')) * 1.0074 # to confirm
 
         # Generate instrumental
         instrum = mixed_sound_array - vocals
