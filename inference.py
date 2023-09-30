@@ -160,7 +160,7 @@ def demix_base_mdxv3(config, model, mix, device):
                         X = torch.cat([a, b, c], -1)
 
         estimated_sources = X[..., C - H:-(pad_size + C - H)] / N
-
+        
         if S > 1:
             return {k: v for k, v in zip(config.training.instruments, estimated_sources.cpu().numpy())}
         else:
@@ -187,8 +187,10 @@ def demix_full_mdx23c(mix, device):
     model.eval()
 
     sources = demix_base_mdxv3(config, model, mix, device)
+    model = model.cpu()
     del model
     gc.collect()
+    torch.cuda.empty_cache()
     return sources
 
 
@@ -429,7 +431,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         """
 
         # print('Update percent func: {}'.format(update_percent_func))
-
+        
         separated_music_arrays = {}
         output_sample_rates = {}
 
@@ -462,6 +464,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
         #sf.write("instru3.wav", sources3['Instrumental'].T, 44100)
         
         # sf.write("vocals3.wav", vocals3.T, 44100)
+        del sources3['Vocals'], sources3['Instrumental']
+        torch.cuda.empty_cache()
+        gc.collect()
 
         print('Processing vocals with UVR-MDX-VOC-FT...')
         overlap = overlap_MDX
@@ -488,6 +493,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
 
         del self.infer_session1
         del self.mdx_models1
+        torch.cuda.empty_cache()
         gc.collect()
         print('Processing vocals with UVR-MDX-HQ3-Instr...')
 
@@ -518,6 +524,7 @@ class EnsembleDemucsMDXMusicSeparationModel:
         
         del self.infer_session2
         del self.mdx_models2
+        torch.cuda.empty_cache()
         print('Processing vocals: DONE!')
         gc.collect()
         # Ensemble vocals for MDX and Demucs
