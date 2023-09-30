@@ -308,8 +308,9 @@ class EnsembleDemucsMDXMusicSeparationModel:
             self.overlap_MDX = 0.99
         if self.overlap_MDX < 0.0:
             self.overlap_MDX = 0.0
-        """
         model_folder = os.path.dirname(os.path.realpath(__file__)) + '/models/'
+        """
+        
         remote_url = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th'
         model_path = model_folder + '04573f0d-f3cf25b2.th'
         if not os.path.isfile(model_path):
