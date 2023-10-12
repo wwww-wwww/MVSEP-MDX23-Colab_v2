@@ -136,7 +136,7 @@ def demix_base_mdxv3(config, model, mix, device):
 
         batches = [chunks[i : i + batch_size] for i in range(0, len(chunks), batch_size)]
 
-        X = torch.zeros(2, *mix.shape).to(device)
+        X = torch.zeros(S, *mix.shape).to(device) if S > 1 else torch.zeros_like(mix) 
 
         with torch.cuda.amp.autocast():
             with torch.no_grad():
