@@ -138,7 +138,7 @@ def demix_base_mdxv3(model, mix, device):
             cnt = 0
             for batch in batches:
                  x = model(batch)
-                for w in x:
+                 for w in x:
                     X[..., cnt * H : cnt * H + C] += w
                     cnt += 1
 
