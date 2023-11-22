@@ -38,7 +38,6 @@ from modules.segm_models import Segm_Models_Net
 
 
 class Conv_TDF_net_trim_model(nn.Module):
-    
     def __init__(self, device, target_name, L, n_fft, hop=1024):
         super(Conv_TDF_net_trim_model, self).__init__()
         self.dim_c = 4
