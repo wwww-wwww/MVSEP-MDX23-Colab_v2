@@ -17,7 +17,7 @@ Recent changes:
 <br>
 
 <details>
-    <summary>Full changelog :</summary>
+    <summary>Full changelog & previous versions links :</summary>
 <br>
 <font size=2>
 <br>
