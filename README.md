@@ -1,10 +1,27 @@
-# MVSep-MDX23 Colab Fork v2.3
+# MVSep-MDX23 Colab Fork v2.4
 Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 
-https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/v2.3/MVSep-MDX23-Colab.ipynb
+https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2_dev/blob/v2.4/MVSep-MDX23-Colab.ipynb
 
 Recent changes:
 <font size=2>
+
+**v2.4**
+* BS-Roformer models from viperx added
+* MDX-InstHQ4 model added as optionnal
+* Flac output
+* Control input volume gain
+* Filter vocals below 50Hz option
+* Better chunking algo (no clicks)
+* Some code cleaning
+
+
+
+</font>
+<br>
+
+<details>
+    <summary>Full changelog :</summary>
 
 **v2.3**
 * HQ3-Instr model replaced by VitLarge23 (thanks to MVSep)
@@ -13,11 +30,6 @@ Recent changes:
 * BigShifts processing added to MDXv3 & VitLarge
 * Faster folder batch processing
 
-</font>
-<br>
-
-<details>
-    <summary>Full changelog & previous versions links :</summary>
 <br>
 <font size=2>
 <br>
