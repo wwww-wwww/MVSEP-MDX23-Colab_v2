@@ -1,7 +1,7 @@
 # MVSep-MDX23 Colab Fork v2.4
 Adaptation of MVSep-MDX23 algorithm for Colab, with few tweaks:
 
-https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2_dev/blob/v2.4/MVSep-MDX23-Colab.ipynb
+https://colab.research.google.com/github/jarredou/MVSEP-MDX23-Colab_v2/blob/v2.4/MVSep-MDX23-Colab.ipynb
 
 Recent changes:
 <font size=2>
