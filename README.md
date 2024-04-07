@@ -23,7 +23,7 @@ Recent changes:
 <details>
     <summary>Full changelog :</summary>
 
-**v2.3**
+[**v2.3**](https://github.com/jarredou/MVSEP-MDX23-Colab_v2/tree/v2.3)
 * HQ3-Instr model replaced by VitLarge23 (thanks to MVSep)
 * Improved MDXv2 processing (thanks to Anjok)
 * Improved BigShifts algo (v2)
